@@ -20,7 +20,7 @@ package org.wso2.is.password.secondaryUserStore.util;
  */
 public class Constant {
 
-    public static final String JVM_PROPERTY_MIGRATE_PASSWORD = "passMigrate";
+    public static final String JVM_PROPERTY_MIGRATE_PASSWORD = "reEncryptSecondaryUserStore";
     public static final String CARBON_HOME = "carbon.home";
     public static final int SUPER_TENANT_ID = -1234;
     public static final String MIGRATION_LOG = " WSO2 Product Migration Service Task : ";

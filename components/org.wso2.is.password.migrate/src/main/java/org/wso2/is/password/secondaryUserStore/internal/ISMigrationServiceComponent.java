@@ -26,8 +26,6 @@ import org.osgi.service.component.annotations.Reference;
 import org.osgi.service.component.annotations.ReferenceCardinality;
 import org.osgi.service.component.annotations.ReferencePolicy;
 import org.wso2.carbon.base.api.ServerConfigurationService;
-import org.wso2.carbon.registry.core.service.RegistryService;
-import org.wso2.carbon.user.core.service.RealmService;
 import org.wso2.is.password.secondaryUserStore.migrator.UserStorePasswordMigrator;
 
 import static org.wso2.is.password.secondaryUserStore.util.Constant.JVM_PROPERTY_MIGRATE_PASSWORD;
@@ -50,15 +48,13 @@ public class ISMigrationServiceComponent {
 
         try {
             String migration = System.getProperty(JVM_PROPERTY_MIGRATE_PASSWORD);
-            log.info("secondary userstore password migration jar added");
+            log.info("secondary userstore password re-encryption component activated");
 
             if (migration != null) {
                 UserStorePasswordMigrator userStorePasswordMigrator = new UserStorePasswordMigrator();
-                log.info("secondary userstore password migration started");
-                context.getBundleContext().registerService(UserStorePasswordMigrator.class, userStorePasswordMigrator,
-                        null);
+                log.info("secondary userstore password re-encryption started");
                 userStorePasswordMigrator.migrate();
-                log.info("secondary userstore password migration ended");
+                log.info("secondary userstore password re-encryption ended");
             }
 
         } catch (Throwable e) {
@@ -80,39 +76,6 @@ public class ISMigrationServiceComponent {
         }
     }
 
-    /**
-     * Method to set realm service.
-     *
-     * @param realmService service to get tenant data.
-     */
-    @Reference(
-            name = "realm.service",
-            service = RealmService.class,
-            cardinality = ReferenceCardinality.MANDATORY,
-            policy = ReferencePolicy.DYNAMIC,
-            unbind = "unsetRealmService"
-    )
-    protected void setRealmService(RealmService realmService) {
-
-        if (log.isDebugEnabled()) {
-            log.debug("Setting RealmService to WSO2 IS Config component");
-        }
-        ISMigrationServiceDataHolder.setRealmService(realmService);
-    }
-
-    /**
-     * Method to unset realm service.
-     *
-     * @param realmService service to get tenant data.
-     */
-    protected void unsetRealmService(RealmService realmService) {
-
-        if (log.isDebugEnabled()) {
-            log.debug("Unsetting RealmService from WSO2 IS Config component");
-        }
-        ISMigrationServiceDataHolder.setRealmService(null);
-    }
-
     @Reference(
             name = "server.configuration.service",
             service = ServerConfigurationService.class,
@@ -130,20 +93,4 @@ public class ISMigrationServiceComponent {
         ISMigrationServiceDataHolder.setServerConfigurationService(null);
     }
 
-    @Reference(
-            name = "registry.service",
-            service = RegistryService.class,
-            cardinality = ReferenceCardinality.MANDATORY,
-            policy = ReferencePolicy.DYNAMIC,
-            unbind = "unsetRegistryService"
-    )
-    protected void setRegistryService(RegistryService registryService) {
-
-        ISMigrationServiceDataHolder.setRegistryService(registryService);
-    }
-
-    protected void unsetRegistryService(RegistryService registryService) {
-
-        ISMigrationServiceDataHolder.setRegistryService(null);
-    }
 }

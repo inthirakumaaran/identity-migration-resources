@@ -22,14 +22,13 @@ import com.google.gson.JsonSyntaxException;
 import org.apache.axiom.om.util.Base64;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.wso2.carbon.base.MultitenantConstants;
 import org.wso2.carbon.base.api.ServerConfigurationService;
 import org.wso2.carbon.core.RegistryResources.SecurityManagement;
 import org.wso2.carbon.core.util.CipherHolder;
 import org.wso2.carbon.core.util.CryptoException;
-import org.wso2.carbon.core.util.KeyStoreManager;
 import org.wso2.is.password.secondaryUserStore.internal.ISMigrationServiceDataHolder;
 
+import java.io.FileInputStream;
 import java.nio.charset.Charset;
 import java.security.KeyStore;
 import java.security.MessageDigest;
@@ -52,21 +51,43 @@ public class SecondaryUserstoreCryptoUtil {
     private static SecondaryUserstoreCryptoUtil instance = new SecondaryUserstoreCryptoUtil();
     private String primaryKeyStoreAlias;
     private String primaryKeyStoreKeyPass;
+    private String primaryKeyStoreLocation;
+    private String primaryKeyStoreType;
+    private String primaryKeyStorePass;
+
     private String internalKeyStoreAlias;
     private String internalKeyStoreKeyPass;
+    private String internalKeyStoreLocation;
+    private String internalKeyStoreType;
+    private String internalKeyStorePass;
+
     private Gson gson = new Gson();
 
     private SecondaryUserstoreCryptoUtil() {
 
         ServerConfigurationService serverConfigService = ISMigrationServiceDataHolder.getServerConfigurationService();
-        this.primaryKeyStoreAlias = serverConfigService.getFirstProperty(SecurityManagement.
-                SERVER_PRIMARY_KEYSTORE_KEY_ALIAS);
-        this.primaryKeyStoreKeyPass = serverConfigService.getFirstProperty(SecurityManagement.
-                SERVER_PRIVATE_KEY_PASSWORD);
-        this.internalKeyStoreAlias = serverConfigService.getFirstProperty(SecurityManagement.
-                SERVER_INTERNAL_KEYSTORE_KEY_ALIAS);
-        this.internalKeyStoreKeyPass = serverConfigService.getFirstProperty(SecurityManagement.
-                SERVER_INTERNAL_PRIVATE_KEY_PASSWORD);
+        this.primaryKeyStoreAlias =
+                serverConfigService.getFirstProperty(SecurityManagement.SERVER_PRIMARY_KEYSTORE_KEY_ALIAS);
+        this.primaryKeyStoreKeyPass =
+                serverConfigService.getFirstProperty(SecurityManagement.SERVER_PRIVATE_KEY_PASSWORD);
+        this.primaryKeyStoreLocation =
+                serverConfigService.getFirstProperty(SecurityManagement.SERVER_PRIMARY_KEYSTORE_FILE);
+        this.primaryKeyStoreType =
+                serverConfigService.getFirstProperty(SecurityManagement.SERVER_PRIMARY_KEYSTORE_TYPE);
+        this.primaryKeyStorePass =
+                serverConfigService.getFirstProperty(SecurityManagement.SERVER_PRIMARY_KEYSTORE_PASSWORD);
+
+        this.internalKeyStoreAlias =
+                serverConfigService.getFirstProperty(SecurityManagement.SERVER_INTERNAL_KEYSTORE_KEY_ALIAS);
+        this.internalKeyStoreKeyPass =
+                serverConfigService.getFirstProperty(SecurityManagement.SERVER_INTERNAL_PRIVATE_KEY_PASSWORD);
+        this.internalKeyStoreLocation =
+                serverConfigService.getFirstProperty(SecurityManagement.SERVER_INTERNAL_KEYSTORE_FILE);
+        this.internalKeyStoreType =
+                serverConfigService.getFirstProperty(SecurityManagement.SERVER_INTERNAL_KEYSTORE_TYPE);
+        this.internalKeyStorePass =
+                serverConfigService.getFirstProperty(SecurityManagement.SERVER_INTERNAL_KEYSTORE_PASSWORD);
+
     }
 
     public static SecondaryUserstoreCryptoUtil getInstance() {
@@ -92,19 +113,16 @@ public class SecondaryUserstoreCryptoUtil {
 
         try {
             Cipher keyStoreCipher;
-            KeyStore keyStore;
             Certificate[] certs;
-            KeyStoreManager keyMan = KeyStoreManager.getInstance(
-                    MultitenantConstants.SUPER_TENANT_ID,
-                    ISMigrationServiceDataHolder.getServerConfigurationService(),
-                    ISMigrationServiceDataHolder.getRegistryService());
-            keyStore = keyMan.getInternalKeyStore();
+            KeyStore keyStore = KeyStore.getInstance(internalKeyStoreType);
+            keyStore.load(new FileInputStream(internalKeyStoreLocation), internalKeyStorePass.toCharArray());
             certs = keyStore.getCertificateChain(internalKeyStoreAlias);
             boolean isCipherTransformEnabled = false;
 
             if (cipherTransformation != null) {
                 if (log.isDebugEnabled()) {
-                    log.debug("Cipher transformation for encryption : " + cipherTransformation);
+                    log.debug("Cipher transformation for encryption with internal keystore : "
+                            + cipherTransformation);
                 }
                 keyStoreCipher = Cipher.getInstance(cipherTransformation, "BC");
                 isCipherTransformEnabled = true;
@@ -118,9 +136,6 @@ public class SecondaryUserstoreCryptoUtil {
             keyStoreCipher.init(Cipher.ENCRYPT_MODE, certs[0].getPublicKey());
             if (isCipherTransformEnabled && plainTextBytes.length == 0) {
                 encryptedKey = "".getBytes();
-                if (log.isDebugEnabled()) {
-                    log.debug("Empty value for plainTextBytes null will persist to DB");
-                }
             } else {
                 encryptedKey = keyStoreCipher.doFinal(plainTextBytes);
             }
@@ -129,7 +144,7 @@ public class SecondaryUserstoreCryptoUtil {
             }
 
         } catch (Exception e) {
-            throw new CryptoException("Error during encryption", e);
+            throw new CryptoException("Error during encryption with internal keystore", e);
         }
         return encryptedKey;
     }
@@ -178,20 +193,17 @@ public class SecondaryUserstoreCryptoUtil {
 
         try {
             Cipher keyStoreCipher;
-            KeyStore keyStore;
             PrivateKey privateKey;
-            KeyStoreManager keyMan = KeyStoreManager.getInstance(
-                    MultitenantConstants.SUPER_TENANT_ID,
-                    ISMigrationServiceDataHolder.getServerConfigurationService(),
-                    ISMigrationServiceDataHolder.getRegistryService());
-            keyStore = keyMan.getPrimaryKeyStore();
+            KeyStore keyStore = KeyStore.getInstance(primaryKeyStoreType);
+            keyStore.load(new FileInputStream(primaryKeyStoreLocation), primaryKeyStorePass.toCharArray());
             privateKey = (PrivateKey) keyStore.getKey(primaryKeyStoreAlias, primaryKeyStoreKeyPass.toCharArray());
             if (cipherTransformation != null) {
                 CipherHolder cipherHolder = cipherTextToCipherHolder(cipherTextBytes);
                 if (cipherHolder != null) {
                     // cipher with meta data.
                     if (log.isDebugEnabled()) {
-                        log.debug("Cipher transformation for decryption : " + cipherHolder.getTransformation());
+                        log.debug("Cipher transformation for decryption with key store: "
+                                + cipherHolder.getTransformation());
                     }
                     keyStoreCipher = Cipher.getInstance(cipherHolder.getTransformation(), "BC");
                     cipherTextBytes = cipherHolder.getCipherBase64Decoded();
@@ -208,15 +220,12 @@ public class SecondaryUserstoreCryptoUtil {
 
             if (cipherTextBytes.length == 0) {
                 decryptedValue = "".getBytes();
-                if (log.isDebugEnabled()) {
-                    log.debug("Empty value for plainTextBytes null will persist to DB");
-                }
             } else {
                 decryptedValue = keyStoreCipher.doFinal(cipherTextBytes);
             }
 
         } catch (Exception e) {
-            throw new CryptoException("errorDuringDecryption", e);
+            throw new CryptoException("errorDuringDecryption with primary keystore", e);
         }
         return decryptedValue;
     }
@@ -272,9 +281,7 @@ public class SecondaryUserstoreCryptoUtil {
         try {
             return gson.fromJson(cipherStr, CipherHolder.class);
         } catch (JsonSyntaxException e) {
-            if (log.isDebugEnabled()) {
-                log.debug("Deserialization failed since cipher string is not representing cipher with metadata");
-            }
+            log.info("Deserialization failed since cipher string is not representing cipher with metadata");
             return null;
         }
     }

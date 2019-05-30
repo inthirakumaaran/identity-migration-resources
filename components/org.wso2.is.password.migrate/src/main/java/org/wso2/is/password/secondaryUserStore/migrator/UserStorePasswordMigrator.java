@@ -25,9 +25,6 @@ import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.core.util.CryptoException;
 import org.wso2.carbon.identity.core.migrate.MigrationClientException;
 import org.wso2.carbon.identity.core.util.IdentityIOStreamUtils;
-import org.wso2.carbon.user.api.Tenant;
-import org.wso2.carbon.user.api.UserStoreException;
-import org.wso2.is.password.secondaryUserStore.internal.ISMigrationServiceDataHolder;
 import org.wso2.is.password.secondaryUserStore.util.Constant;
 import org.wso2.is.password.secondaryUserStore.util.EncryptionUtil;
 
@@ -37,10 +34,9 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.Set;
+import java.util.List;
 import javax.xml.namespace.QName;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
@@ -50,25 +46,19 @@ public class UserStorePasswordMigrator {
 
     private static final Log log = LogFactory.getLog(UserStorePasswordMigrator.class);
 
-    /**
-     * Return all the tenants or tenant range by checking migrateTenantRange option is enabled.
-     *
-     * @return tenant set
-     * @throws MigrationClientException
-     */
-    private static Set<Tenant> getTenants() throws MigrationClientException {
+    public static List<String> findSubfiles(String path) {
 
-        Set<Tenant> tenants;
-        Tenant[] tenantsArray;
-        try {
-            tenantsArray = ISMigrationServiceDataHolder.getRealmService().getTenantManager().getAllTenants();
-            tenants = new HashSet<>(Arrays.asList(tenantsArray));
-
-        } catch (UserStoreException e) {
-            String msg = "Error while retrieving the tenants.";
-            throw new MigrationClientException(msg, e);
+        File folder = new File(path);
+        File[] listOfFiles = folder.listFiles();
+        List<String> filePaths = new ArrayList<>();
+        for (int i = 0; i < listOfFiles.length; i++) {
+            String filename = listOfFiles[i].getName();
+            String filePath = listOfFiles[i].getPath();
+            if (filename.matches("\\d+")) {
+                filePaths.add(filePath);
+            }
         }
-        return tenants;
+        return filePaths;
     }
 
     public void migrate() throws MigrationClientException {
@@ -81,22 +71,25 @@ public class UserStorePasswordMigrator {
     private void updateTenantConfigs() throws MigrationClientException {
 
         try {
-            Set<Tenant> tenants = getTenants();
-            for (Tenant tenant : tenants) {
+            String carbonHome = System.getProperty(Constant.CARBON_HOME);
+            List<String> tenantsPaths = findSubfiles(Paths
+                    .get(carbonHome, new String[]{"repository", "tenants"}).toString());
+            for (String tenant : tenantsPaths) {
 
                 try {
-                    File[] userStoreConfigs = getUserStoreConfigFiles(tenant.getId());
+                    File[] userStoreConfigs = getUserStoreConfigFiles(tenant);
                     for (File file : userStoreConfigs) {
                         if (file.isFile()) {
                             updatePassword(file.getAbsolutePath());
                         }
                     }
                 } catch (FileNotFoundException | CryptoException e) {
-                    String msg = "Error while updating secondary user store password for tenant: " + tenant.getDomain();
+                    String msg =
+                            "Error while updating secondary user store password for tenant: " + tenant.split("/")[-1];
                     log.error(msg, e);
                 }
             }
-        } catch (MigrationClientException e) {
+        } catch (Exception e) {
             throw new MigrationClientException("Error while getting tenants for migration", e);
         }
     }
@@ -104,7 +97,14 @@ public class UserStorePasswordMigrator {
     private void updateSuperTenantConfigs() {
 
         try {
-            File[] userStoreConfigs = getUserStoreConfigFiles(Constant.SUPER_TENANT_ID);
+            String carbonHome = System.getProperty(Constant.CARBON_HOME);
+            String userStorePath = Paths.get(carbonHome, new String[]{"repository", "deployment", "server",
+                    "userstores"})
+                    .toString();
+            File[] userStoreConfigs = new File(userStorePath).listFiles();
+            if (userStoreConfigs == null) {
+                userStoreConfigs = new File[0];
+            }
             for (File file : userStoreConfigs) {
                 if (file.isFile()) {
                     updatePassword(file.getAbsolutePath());
@@ -115,18 +115,13 @@ public class UserStorePasswordMigrator {
         }
     }
 
-    private File[] getUserStoreConfigFiles(int tenantId) {
+    private File[] getUserStoreConfigFiles(String parentPath) {
 
-        String carbonHome = System.getProperty(Constant.CARBON_HOME);
         String userStorePath;
-        if (tenantId == Constant.SUPER_TENANT_ID) {
-            userStorePath = Paths.get(carbonHome, new String[]{"repository", "deployment", "server", "userstores"})
-                    .toString();
-        } else {
-            userStorePath = Paths
-                    .get(carbonHome, new String[]{"repository", "tenants", String.valueOf(tenantId), "userstores"})
-                    .toString();
-        }
+        userStorePath = Paths
+                .get(parentPath, "userstores")
+                .toString();
+
         File[] files = new File(userStorePath).listFiles();
         return files != null ? files : new File[0];
     }
